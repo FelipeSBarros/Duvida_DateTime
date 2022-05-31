@@ -1,6 +1,7 @@
 ## Tentando entender a relação datetime com e sem `timezone` entre SQLAlchemy e Postgres
 
-**Última [atualização: 31/05](#update)**  
+**Última [atualização: 31/05](#update-1)**  
+**Última [atualização: 1/06](#update-2)**  
 
 Pessoal, em um projeto que estou desenvolvendo comecei a ter alguns problemas com os dados de data e hora armazenados no banco de dados Postgres e manipulados no python. Basicamente, os dados são manipulados em python com o pacote `datetime`, salvos no banco de dados usando `SQLAlchmey`.
 
@@ -252,7 +253,7 @@ Acessando so dados pelo SQLAlchemy, passo a ter:
 
 Estou bem perdido em como trabalhar com esses dados. Como evitar ao máximo as conversões entre o objeto `datetime`, o que está salvo no banco de dados e o que é resgatado pelo SQLAlchemy?
 
-### Update
+### Update 1
 
 Ao conversar com um colega, me foi informado que a forma como eu estava definido o `timezone` esatava equivocado. A única direção dada, por ele foi [essa pergunta no SOF](https://stackoverflow.com/questions/1379740/pytz-localize-vs-datetime-replace).
 Os detalhes são um pouco confusos, mas esse comentário acho que indica onde estou errando na definição do `timezone` e o porquê:
@@ -335,12 +336,56 @@ Bom, parece que essa forma também persiste os dados de forma correta. Gracias, 
 
 Agora ficam as seguintes dúvidas:
 
-* Por quê objetos em outro timezone são persistidos com o timezone -0300?
+* Por que objetos em outro timezone são persistidos com o timezone -0300?
 > Por incrível que pareça, quando executo `show timezone;` no psql, tenho o retorno informado no início do texto (UTC). Mas ao executr numa gui, [DBeaver]() tive o timezone de Buenos Aires, retornado: America/Argentina/Buenos_Aires. Logo, presumo que esse é o timezone do banco de dados e por isso ele está ssumindo -0300 para todos os registros.
 * É possível ter registros em diferentes timezones no postgres?  
-* Por quê o SQLAlchemy sempre retorna os dados em UTC?  
+* Por que o SQLAlchemy sempre retorna os dados em UTC?  
 
 Ainda falta:
 * explorar a sugestão do [cuducos](https://twitter.com/cuducos): identificar como a *query* é feita pelo SQLAlchemy, tanto para salvar os dados, como para resgatar-los.
 
 A saga continua...
+
+### Update 2
+
+Nem fiz o commit segui "encucado" do o fato de o postgres salvar todos os registros em timezone -0300.
+decidi acessar o psql e confirmar o timezone. Fiz o mesmo, usando uma GUI (DBEAVER) e: cada um apresenta um timezone diferente. No psql, UTC e na GUI -3.
+Fiz as consultas que estive apresetando aqui (que eram provenientes do visualizador DBeaver) pelo psl e eis que todos os registro são salvos em UTC, no banco de dados!
+```python
+psql -h localhost -U postgres -p 5433 postgres
+select * from datetime
+```
+:warning: não reparem a quantidade de registros...
+
+| id \|      date_time_tz_aware       \|        isoformat_tz_aware        \|       datetime_naive       \|      isoformat_naive 	|
+|---	|
+| ----+-------------------------------+----------------------------------+----------------------------+---------------------------- 	|
+| 1 \| 2022-05-27 15:49:15.613346+00 \| 2022-05-27T12:43:15.613346       \| 2022-05-27 15:49:15.613346 \| 2022-05-27T12:43:15.613346 	|
+| 2 \| 2022-05-27 15:49:15.613346+00 \| 2022-05-27T12:43:15.613346-03:06 \| 2022-05-27 12:43:15.613346 \| 2022-05-27T12:43:15.613346 	|
+| 3 \| 2022-05-27 15:36:00+00        \| 2022-05-27T12:30:00-03:06        \| 2022-05-27 12:30:00        \| 2022-05-27T12:30:00 	|
+| 4 \| 2022-05-27 15:36:00+00        \| 2022-05-27T12:30:00-03:06        \| 2022-05-27 15:36:00        \| 2022-05-27T12:30:00-03:06 	|
+| 5 \| 2022-05-27 12:30:00+00        \| 2022-05-27T12:30:00              \| 2022-05-27 12:30:00        \| 2022-05-27T12:30:00 	|
+| 6 \| 2022-05-27 15:30:00+00        \| 2022-05-27T12:30:00-03:00        \| 2022-05-27 12:30:00        \| 2022-05-27T12:30:00 	|
+| 7 \| 2022-05-27 15:30:00+00        \| 2022-05-27T12:30:00-03:00        \| 2022-05-27 12:30:00        \| 2022-05-27T12:30:00 	|
+| 9 \| 2022-05-27 04:30:00+00        \| 2022-05-27T12:30:00+08:00        \| 2022-05-27 12:30:00        \| 2022-05-27T12:30:00 	|
+| 8 \| 2022-05-27 04:30:00+00        \| 2022-05-27T12:30:00+08:00        \| 2022-05-27 12:30:00        \| 2022-05-27T12:30:00 	|
+
+Ou seja, o postgres recebe o dado em diferentes timezones e converte tudo para UTC. O que estava em +8, foi convertido a UTC, tbm.
+
+Isso me fez lembrar da documentação do postgres:
+
+> For timestamp with time zone, the internally stored value is always in UTC (Universal Coordinated Time, traditionally known as Greenwich Mean Time, GMT). An input value that has an explicit time zone specified is converted to UTC using the appropriate offset for that time zone. If no time zone is stated in the input string, then it is assumed to be in the time zone indicated by the system's TimeZone parameter, and is converted to UTC using the offset for the timezone zone.
+> [fonte](https://www.postgresql.org/docs/current/datatype-datetime.html)
+
+Isso aí foi tema de discussão com meu chefe...
+
+voltando aos pontos levantados antes:
+Agora ficam as seguintes dúvidas:
+
+* Por que objetos em outro timezone são persistidos com o timezone -0300?
+> Na verdade no postgres os dados são persistidos em UTC. Seja qual for o `timezone` do objeto o mesmo é corretamente convertido.
+* É possível ter registros em diferentes timezones no postgres?  
+> Não, a menos que se mude nas configurações do banco de dados. Mas todos sao devidamente convertidos  a UTC.
+* Por que o SQLAlchemy sempre retorna os dados em UTC?  
+> Pelo visto nao e o SQLAlchemy que faz isso. Ele apenas retorna os dados tal qual estao. Agora fica a pergunta:
+> A conversao de timezone e feita pelo sqlalchemy ou pelo postgres. A principio me parece ser o proprio postgres. Talvez essa duvida seja resolvida explorando a query de inserçao.  
