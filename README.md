@@ -249,3 +249,96 @@ Acessando so dados pelo SQLAlchemy, passo a ter:
 - Na coluna `naive` também, mas, como esperado sem a info de `timezone`;
 
 Estou bem perdido em como trabalhar com esses dados. Como evitar ao máximo as conversões entre o objeto `datetime`, o que está salvo no banco de dados e o que é resgatado pelo SQLAlchemy?
+
+### Update
+
+Ao conversar com um colega, me foi informado que a forma como eu estava definido o `timezone` esatava equivocado. A única direção dada, por ele foi [essa pergunta no SOF](https://stackoverflow.com/questions/1379740/pytz-localize-vs-datetime-replace).
+Os detalhes são um pouco confusos, mas esse comentário acho que indica onde estou errando na definição do `timezone` e o porquê:
+
+>@MichaelWaterfall: pytz.timezone() may correspond to several tzinfo objects (same place, different UTC offsets, timezone abbreviations). tz.localize(d) tries to find the correct tzinfo for the given d local time (some local time is ambiguous or doesn't exist). replace() just sets whatever (random) info pytz timezone provides by default without regard for the given date (LMT in recent versions). tz.normalize() may adjust the time if d is a non-existent local time e.g., the time during DST transition in Spring (northern hemisphere) otherwise it does nothing in this case.
+
+Então, como estou usando o `pytz` para definir um objeto de `timezone`, o `replace` não seria a forma correta, mas sim, o método `localize` do pórprio timezone. Reparem a diferença que isso fez:
+
+```
+BR_TIME_ZONE = pytz.timezone("America/Sao_Paulo")
+naive = datetime(2022, 5, 27, 12, 30, 0, 0)
+naive.replace(tzinfo=BR_TIME_ZONE)
+# datetime.datetime(2022, 5, 27, 12, 30, tzinfo=<DstTzInfo 'America/Sao_Paulo' LMT-1 day, 20:54:00 STD>)
+BR_TIME_ZONE.localize(naive)
+# datetime.datetime(2022, 5, 27, 12, 30, tzinfo=<DstTzInfo 'America/Sao_Paulo' -03-1 day, 21:00:00 STD>)
+```
+
+Reparem que há uma diferença de seis minutos entre os objetos resultantes, sendo o retornado pelo `localize`, o correto (21 e 20:54).
+
+Fiz mais um testepara entender se o problema é o método `replace` ou a forma como o `pytz` define o `timezone`:
+
+```python
+datetime(2022, 5, 27, 12, 30, 0, 0, tzinfo=BR_TIME_ZONE)
+# datetime.datetime(2022, 5, 27, 12, 30, tzinfo=<DstTzInfo 'America/Sao_Paulo' LMT-1 day, 20:54:00 STD>)
+```
+
+Mesmo passando o `timezone` do `pytz` como parâmetro `tzinfo`, a diferença de seis minutos segue (20:54). Ou seja, também não é a forma correta.
+
+Ao salvar no banco de dados o objeto `aware` criado usando o `localize`, os dados foram, enfim, salvos de forma correta:
+
+```python
+# date_time_tz_aware    iso_format_tz_aware    date_time_naive    isofomat_naive
+# 2022-05-27 12:30:00.000 -0300	2022-05-27T12:30:00-03:00	2022-05-27 12:30:00.000	2022-05-27T12:30:00
+```
+
+OK, um problema, resolvido. Os dados de datetime estão sendo salvos de forma correta no banco de dados e com a inforação do `timezone`. Mas a consulta feita pelo SQLAlchemy, retorna o dado convertido em UTC. Fiquei nevegando por várias perguntas no SOF, e comecei a refletir sobre isso.
+Vi, em uma delas que o SQLAlchemy por padrão retorna os dados em UTC, mesmo. A pergunta que me fiz foi: Por que?
+Com o tempo mudei a pergunta para: Porque guardar a iformação de timezone junto? Se o sistema estiver rodando numa única timezone, podemos usar o formato naive. Então, comecei a suspeitar que a ideia de salvar os dados com a info de timezone, tenha a ver com a possibilidade de registros terem diferentes timezones.
+Então, comecei a desconfiar que o SQLAlchemy retorna um UTC já padronizando, todos os registros, para um único `timezone`, o UTC.
+Resolvi, então fazer um teste: selecionei um `timezone` aleatório do `pytz` e salvei no banco:
+
+```python
+BRU_TIME_ZONE = pytz.timezone("Asia/Brunei")
+aware = BRU_TIME_ZONE.localize(naive)
+# datetime.datetime(2022, 5, 27, 12, 30, tzinfo=<DstTzInfo 'Asia/Brunei' +08+8:00:00 STD>)
+```
+
+No banco de dados ficou:
+
+```python
+# date_time_tz_aware    iso_format_tz_aware    date_time_naive    isofomat_naive
+# 2022-05-27 01:30:00.000 -0300	2022-05-27T12:30:00+08:00	2022-05-27 12:30:00.000	2022-05-27T12:30:00
+```
+
+Pronto, **agora é que eu não entendi nada.** Espearava ver o registro com a info do `timezone` (+0800), mas não. O SQLAlchemy mandou para o banco com o `timezone` -0300.
+
+Pois, se eu posso gardar diferentes registros com diferentes `timezones`, pode ser que o SQLAlchemy já faça a homogeneização ao UTC por padrão para facilitar a vida do usuário, que terá que converter apenas de UTC ao `timezone` desejado...
+
+Sigo perdido.
+
+Mais alguns pontos: fui assistir [à live de python sobre `datetime`, feita há algumas semanas](https://youtu.be/BImF-dZYass?t=3948). Vi que, o [@dunossauro](https://twitter.com/dunossauro) indica a definição de `timezone` usando [`timedelta`](https://docs.python.org/3/library/datetime.html#timedelta-objects).
+
+Vamos testar, então: 
+
+```python
+from datetime import timezone, timedelta
+
+# BR_TIME_ZONE = pytz.timezone("America/Sao_Paulo")
+BR_TIME_ZONE = timezone(timedelta(hours=-3))
+```
+
+O processo de definição do `timezone`, seguiu o mesmo, usando o [`localize`]().
+
+```python
+# date_time_tz_aware    iso_format_tz_aware    date_time_naive    isofomat_naive
+# 2022-05-27 12:30:00.000 -0300	2022-05-27T12:30:00-03:00	2022-05-27 12:30:00.000	2022-05-27T12:30:00
+```
+
+Bom, parece que essa forma também persiste os dados de forma correta. Gracias, [@dunossauro](https://twitter.com/dunossauro)!
+
+Agora ficam as seguintes dúvidas:
+
+* Por quê objetos em outro timezone são persistidos com o timezone -0300?
+> Por incrível que pareça, quando executo `show timezone;` no psql, tenho o retorno informado no início do texto (UTC). Mas ao executr numa gui, [DBeaver]() tive o timezone de Buenos Aires, retornado: America/Argentina/Buenos_Aires. Logo, presumo que esse é o timezone do banco de dados e por isso ele está ssumindo -0300 para todos os registros.
+* É possível ter registros em diferentes timezones no postgres?  
+* Por quê o SQLAlchemy sempre retorna os dados em UTC?  
+
+Ainda falta:
+* explorar a sugestão do [cuducos](https://twitter.com/cuducos): identificar como a *query* é feita pelo SQLAlchemy, tanto para salvar os dados, como para resgatar-los.
+
+A saga continua...
