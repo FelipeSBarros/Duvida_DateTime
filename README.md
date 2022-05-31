@@ -1,5 +1,7 @@
 ## Tentando entender a relação datetime com e sem `timezone` entre SQLAlchemy e Postgres
 
+**Última [atualização: 31/05](#update)**  
+
 Pessoal, em um projeto que estou desenvolvendo comecei a ter alguns problemas com os dados de data e hora armazenados no banco de dados Postgres e manipulados no python. Basicamente, os dados são manipulados em python com o pacote `datetime`, salvos no banco de dados usando `SQLAlchmey`.
 
 Tentei reproduzir o que tenho encontrado e tantando expandir o problema, criai uma tabela `DateTimeTable` com quatro campos: dois campos [`DateTime()`](https://docs.sqlalchemy.org/en/14/core/type_basics.html#sqlalchemy.types.DateTime), um deles com o parâmetro [`timezone=True`](https://docs.sqlalchemy.org/en/14/core/type_basics.html#sqlalchemy.types.DateTime.params.timezone), e outros dois campos de texto para ter a documentação do valor enviado com [`isoformat()`](https://docs.python.org/3/library/datetime.html#datetime.datetime.isoformat).  
