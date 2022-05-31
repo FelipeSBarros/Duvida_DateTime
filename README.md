@@ -1,7 +1,7 @@
 ## Tentando entender a relação datetime com e sem `timezone` entre SQLAlchemy e Postgres
 
 **Última [atualização: 31/05](#update-1)**  
-**Última [atualização: 1/06](#update-2)**  
+**Última [atualização: 31/05 II](#update-2)**  
 
 Pessoal, em um projeto que estou desenvolvendo comecei a ter alguns problemas com os dados de data e hora armazenados no banco de dados Postgres e manipulados no python. Basicamente, os dados são manipulados em python com o pacote `datetime`, salvos no banco de dados usando `SQLAlchmey`.
 
