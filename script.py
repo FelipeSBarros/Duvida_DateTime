@@ -74,6 +74,7 @@ for row in session.query(DateTimeTable).all():
         row.date_time_naive,
         row.isoformat_naive,
     )
+
 # id  date_time_tz_aware    iso_format_tz_aware    date_time_naive    isofomat_naive
 # 2022-05-27 15:36:00+00:00 2022-05-27T12:30:00-03:06 2022-05-27 12:30:00 2022-05-27T12:30:00
 

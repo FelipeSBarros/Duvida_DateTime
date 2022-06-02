@@ -2,6 +2,7 @@
 
 **Última [atualização: 31/05](#update-1)**  
 **Última [atualização: 31/05 II](#update-2)**  
+**Última [atualização: 02/06 III](#update-3)**  
 
 Pessoal, em um projeto que estou desenvolvendo comecei a ter alguns problemas com os dados de data e hora armazenados no banco de dados Postgres e manipulados no python. Basicamente, os dados são manipulados em python com o pacote `datetime`, salvos no banco de dados usando `SQLAlchmey`.
 
@@ -337,7 +338,7 @@ Bom, parece que essa forma também persiste os dados de forma correta. Gracias, 
 Agora ficam as seguintes dúvidas:
 
 * Por que objetos em outro timezone são persistidos com o timezone -0300?
-> Por incrível que pareça, quando executo `show timezone;` no psql, tenho o retorno informado no início do texto (UTC). Mas ao executr numa gui, [DBeaver]() tive o timezone de Buenos Aires, retornado: America/Argentina/Buenos_Aires. Logo, presumo que esse é o timezone do banco de dados e por isso ele está ssumindo -0300 para todos os registros.
+> Por incrível que pareça, quando executo `show timezone;` no psql, tenho o retorno informado no início do texto (UTC). Mas ao executr numa gui, [DBeaver](https://dbeaver.io/) tive o timezone de Buenos Aires, retornado: America/Argentina/Buenos_Aires. Logo, presumo que esse é o timezone do banco de dados e por isso ele está ssumindo -0300 para todos os registros.
 * É possível ter registros em diferentes timezones no postgres?  
 * Por que o SQLAlchemy sempre retorna os dados em UTC?  
 
@@ -349,7 +350,7 @@ A saga continua...
 ### Update 2
 
 Nem fiz o commit segui "encucado" do o fato de o postgres salvar todos os registros em timezone -0300.
-decidi acessar o psql e confirmar o timezone. Fiz o mesmo, usando uma GUI (DBEAVER) e: cada um apresenta um timezone diferente. No psql, UTC e na GUI -3.
+decidi acessar o psql e confirmar o timezone. Fiz o mesmo, usando uma GUI (DBeaver) e: cada um apresenta um timezone diferente. No psql, UTC e na GUI -3.
 Fiz as consultas que estive apresetando aqui (que eram provenientes do visualizador DBeaver) pelo psl e eis que todos os registro são salvos em UTC, no banco de dados!
 ```python
 psql -h localhost -U postgres -p 5433 postgres
@@ -388,3 +389,70 @@ Agora ficam as seguintes dúvidas:
 * Por que o SQLAlchemy sempre retorna os dados em UTC?  
 > Pelo visto nao e o SQLAlchemy que faz isso. Ele apenas retorna os dados tal qual estao. Agora fica a pergunta:
 > A conversao de timezone e feita pelo sqlalchemy ou pelo postgres. A principio me parece ser o proprio postgres. Talvez essa duvida seja resolvida explorando a query de inserçao.  
+
+### Update 3
+
+Bom, para fechar a última dúvida:
+* Por que o SQLAlchemy sempre retorna os dados em UTC?  
+> Pelo visto nao e o SQLAlchemy que faz isso. Ele apenas retorna os dados tal qual estao. Agora fica a pergunta:
+> A conversao de timezone e feita pelo sqlalchemy ou pelo postgres. A principio me parece ser o proprio postgres. Talvez essa duvida seja resolvida explorando a query de inserçao.  
+
+Não é o SQLAlchemy, mas o postgres que funciona assim. Como já dito antes, o postgres sempre mantén os dados com time zone UTC. E ele o converte automaticamente de acordo com o timezone da cessão de acesso ao banco de dados. Vejam:
+```python
+psql -h localhost -U postgres -p 5433 postgres
+
+postgres= show timezone;
+#  TimeZone 
+# ----------
+#  Etc/UTC
+# (1 row)
+select * from datetime;
+```
+Com uma session recém iniciada, o `timezone` é configurado para UTC.
+Ao fazer um select, a coluna com `timezone` consciente (`date_time_tz_aware`), apresenta os dados como são salvos no banco, em UTC.
+
+|  id  |       date_time_tz_aware        |         isoformat_tz_aware         |        datetime_naive        |       isoformat_naive        |
+|------|---------------------------------|------------------------------------|------------------------------|------------------------------|
+| 1    |  2022-05-27 15:49:15.613346+00  |  2022-05-27T12:43:15.613346        | 2022-05-27 15:49:15          |  2022-05-27T12:43:15.613346  |
+| 2    |  2022-05-27 15:49:15.613346+00  |  2022-05-27T12:43:15.613346-03:06  | 2022-05-27 12:43:15          |  2022-05-27T12:43:15.613346  |
+| 3    |  2022-05-27 15:36:00+00         |  2022-05-27T12:30:00-03:06         | 2022-05-27 12:30:00          |  2022-05-27T12:30:00         |
+| 4    |  2022-05-27 15:36:00+00         |  2022-05-27T12:30:00-03:06         | 2022-05-27 15:36:00          |  2022-05-27T12:30:00-03:06   |
+| 5    |  2022-05-27 12:30:00+00         |  2022-05-27T12:30:00               | 2022-05-27 12:30:00          |  2022-05-27T12:30:00         |
+| 6    |  2022-05-27 15:30:00+00         |  2022-05-27T12:30:00-03:00         | 2022-05-27 12:30:00          |  2022-05-27T12:30:00         |
+| 7    |  2022-05-27 15:30:00+00         |  2022-05-27T12:30:00-03:00         | 2022-05-27 12:30:00          |  2022-05-27T12:30:00         |
+| 8    |  2022-05-27 04:30:00+00         |  2022-05-27T12:30:00+08:00         | 2022-05-27 12:30:00          |  2022-05-27T12:30:00         |
+| 9    |  2022-05-27 04:30:00+00         |  2022-05-27T12:30:00+08:00         | 2022-05-27 12:30:00          |  2022-05-27T12:30:00         |
+
+Se, na mesma conexão, eu configuro o `timezone` para `AmericaSao_Paulo`, e faço executa a mesma query, os dados na coluna com `timezone` consciente serão apresentados convertidos ao `timezone` definido na conexão.
+
+```python
+
+postgres=# set timezone = 'America/Sao_Paulo';
+#SET
+postgres=# show timezone;
+#      TimeZone      
+# -------------------
+#  America/Sao_Paulo
+# (1 row)
+
+
+select * from datetime;
+```
+
+|  id  |       date_time_tz_aware        |         isoformat_tz_aware         |        datetime_naive        |       isoformat_naive        |
+|------|---------------------------------|------------------------------------|------------------------------|------------------------------|
+| 1    |  2022-05-27 12:49:15.613346-03  |  2022-05-27T12:43:15.613346        | 2022-05-27 15:49:15          |  2022-05-27T12:43:15.613346  |
+| 2    |  2022-05-27 12:49:15.613346-03  |  2022-05-27T12:43:15.613346-03:06  | 2022-05-27 12:43:15          |  2022-05-27T12:43:15.613346  |
+| 3    |  2022-05-27 12:36:00-03         |  2022-05-27T12:30:00-03:06         | 2022-05-27 12:30:00          |  2022-05-27T12:30:00         |
+| 4    |  2022-05-27 12:36:00-03         |  2022-05-27T12:30:00-03:06         | 2022-05-27 15:36:00          |  2022-05-27T12:30:00-03:06   |
+| 5    |  2022-05-27 09:30:00-03         |  2022-05-27T12:30:00               | 2022-05-27 12:30:00          |  2022-05-27T12:30:00         |
+| 6    |  2022-05-27 12:30:00-03         |  2022-05-27T12:30:00-03:00         | 2022-05-27 12:30:00          |  2022-05-27T12:30:00         |
+| 7    |  2022-05-27 12:30:00-03         |  2022-05-27T12:30:00-03:00         | 2022-05-27 12:30:00          |  2022-05-27T12:30:00         |
+| 8    |  2022-05-27 01:30:00-03         |  2022-05-27T12:30:00+08:00         | 2022-05-27 12:30:00          |  2022-05-27T12:30:00         |
+| 9    |  2022-05-27 01:30:00-03         |  2022-05-27T12:30:00+08:00         | 2022-05-27 12:30:00          |  2022-05-27T12:30:00         |
+
+Tudo parece bem obvio, não? Mas uma ciosa que foi fundamental para a minha confusão mental sobre esse comportamente estranho é que eu estive usando o DBeaver como interface gráfica para ver como os dados estavam armazenados no banco de dados. E o DBeaver em algum momento, identifica o `timezone` do sistema que o está executando e o usa na configuração da sessão. Então, eu acessava os dados pelo SQLAlchemy, que usa uma sessão padrão, sem configuração de timezone, logo `timezone` UTC, e recebia os dados como tal. Mas ao olhar os mesmos dados pelo DBeaver, os via convertidos para a timezone do meu sistema, `America/Sao_Paulo`, e os via convertido, com outros valores na coluna com `timezone` consciente;
+
+E com isso, eu desenvolvi um sistem, entendendo que os dados já estariam em -3, pois foram manipulados e salvos no banco de dados assim, e assim os via pelo DBeaver, mas ao consultar o banco de dados pelo SQLAlchemy os mesmos vinham em UTC. Logo, eu tinha problemas no desencadeamento do sistema pois a data e hora retorndos da consulta eram usados para filtrar outros dados que tinham a data e hora (`timezone` -3) armazenados em um campo de texto (logo esses não passavam por qualquer processo de conversão).  
+
+Enfim, vivendo e aprendendo.
