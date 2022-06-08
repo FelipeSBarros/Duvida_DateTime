@@ -2,9 +2,11 @@
 
 Há algum tempo comecei a perceber um "comportamento estranho" relacionado aos dados de data e hora num sistema que estava desenvolvendo. Minha reação inicial foi, simplemente resolver, contornndo a situação. Mas chegou um momento que precisei entender a origem do mesmo para poder tomar uma decisão de como estruturar meu código ao manipular dados de data e hora. Mais uma vez tive que fazer um exercício de seguir esse problema, tentando isola-lo e compreender o motivo de sua existencia. Esse processo me tomou alguns dias. E, claro, me trouxe alguns aprendizados. Ainda que agora, tendo resolvido e entendido o "comprotamento estranho", tudo parece óbvio, decidi compartilhar um pouco deste processo, pois vi que é uma situação pouco comentada. Talvez por se tratar de algo muito específico. 
 
-Antes de tudo, lhes resumo o sistema:  
+Antes de tudo, lhes resumo a parte que impota sobre o sistema:  
 
-O sistema que estava desenvolvendo, estava em uma instância EC2 da AWS, com timezone UTC, e nele eu manipulava um dado de data e hora, usando o módulo python [`datetime`][], com `timezone` consciente (`aware`), transformando-os ao `timezone` do Brasil (-0300), mais específicamente `America/Sao_Paulo`. Esse dado era então persistido no banco de dados [postgres][], que estava numa instancia da azure, também com timezone UTC, em duas colunas diferentes: uma coluna também [`timezone` consciente](https://www.postgresql.org/docs/current/datatype-datetime.html) (mais sobre timezone consciente no [SQLAlchemy](https://docs.sqlalchemy.org/en/14/core/type_basics.html#sqlalchemy.types.DateTime.params.timezone) e outra, uma coluna de texto onde além da data e hora em formato [iso][] com uma observação textual (que não vem ao caso, agora). O [SQLAlchemy][] estava sendo usado para fazer a conexão com o banco de dados, commit e etc. E, pensando em facilitar minha estive usando o [DBeaver][], uma interface gráfica para gestão de banco de dados.
+O sistema estava numa instância EC2 da AWS, com timezone UTC, e nele eu manipulava um dado de data e hora, usando o módulo python [`datetime`][], com `timezone` consciente (`aware`), transformando-os ao `timezone` do Brasil (-03). Esse dado era então persistido no banco de dados [postgres][], que estava numa instância da azure, também com timezone UTC. Os dados eram persistidos em duas colunas diferentes: uma coluna [DateTime com `timezone` consciente](https://www.postgresql.org/docs/current/datatype-datetime.html) e, uma coluna de texto onde, além da data e hora em formato [iso][], uma observação textual era adicionada (que não vem ao caso, agora). Mas é importante saber isso, tínhamos o mesmo dado de data e hora persistido como data e hora e como texto.  
+
+O [SQLAlchemy][] estava sendo usado para fazer a conexão com o banco de dados, commit e etc. E, pensando em facilitar minha estive usando o [DBeaver][], uma interface gráfica para gestão de banco de dados.
 
 Agora, vamos ao "comprotamento estranho":  
 
@@ -19,7 +21,7 @@ Contudo, ao realizar uma consulta aos dados usando [SQLAlchemy]() os mesmos esta
 Pessoal, em um projeto que estou desenvolvendo comecei a ter alguns problemas com os dados de data e hora armazenados no banco de dados Postgres e manipulados no python. Basicamente, os dados são manipulados em python com o pacote `datetime`, salvos no banco de dados usando `SQLAlchmey`.
 
 Tentei reproduzir o que tenho encontrado e tantando expandir o problema, criai uma tabela `DateTimeTable` com quatro campos: dois campos [`DateTime()`](https://docs.sqlalchemy.org/en/14/core/type_basics.html#sqlalchemy.types.DateTime), um deles com o parâmetro [`timezone=True`](https://docs.sqlalchemy.org/en/14/core/type_basics.html#sqlalchemy.types.DateTime.params.timezone), e outros dois campos de texto para ter a documentação do valor enviado com [`isoformat()`](https://docs.python.org/3/library/datetime.html#datetime.datetime.isoformat).  
-
+(mais sobre timezone consciente no [SQLAlchemy](https://docs.sqlalchemy.org/en/14/core/type_basics.html#sqlalchemy.types.DateTime.params.timezone)
 ### TL/DR  
 
 Ao trabalhar com objetos datetime, salva-los num banco de dados postgres, em campo DateTime, e resgata-los com SQLAlchemy, pudo perceber que algumas conversoes sao feitas. Fiquei perdido sem entender e que momento essas conversoes xacontecem nem como controla-las. Afinal, a pergunta e:  
