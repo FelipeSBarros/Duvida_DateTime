@@ -31,7 +31,7 @@ Session = sessionmaker(bind=engine)
 session = Session()
 
 
-BR_TIME_ZONE = pytz.*time zone*("America/Sao_Paulo")
+BR_TIME_ZONE = pytz.timezone("America/Sao_Paulo")
 
 #naive = datetime.now()
 naive = datetime(2022, 5, 27, 12, 30, 0, 0)
@@ -53,9 +53,9 @@ Ao fazer o commit e consultar a base de dados, começa o terror e pânico:
 
 Ao usar o DBeaver para acessar o registro criado (seja pela interface gráfica como pela query da GUI), observei que:
 
-* O dado persistido na coluna consciente, o valor foi alterado em seis minutos (acrescidos). **Deveria ser 12:30 e passou a ser 12:36**, ao passo que a informação de *time zone* e apresentada de forma correta: -0300;  
-* O dado da coluna `iso_format_tz_aware` possui a informaçao sem qualquer alteraçao. Ao passo que a *time zone* informada não é a esperada (-3 horas). É -03 horas e 06 minutos. Lembrem-se que o *time zone* da coluna `date_time_aware` é informado apenas `-0300`;
-* Os dados persistidos nos campos *time zone* ingenuos não apresentaram qualquer alteraçao.
+* O valor persistido na coluna consciente foi alterado em seis minutos (acrescidos). **Deveria ser 12:30 e passou a ser 12:36**, ao passo que a informação de *time zone* é apresentada de forma correta: -0300;  
+* O dado da coluna `iso_format_tz_aware` possui a informação sem qualquer alteraçao. Ao passo que a *time zone* informada não é a esperada (-3 horas), mas -03 horas e 06 minutos. Lembrem-se que o *time zone* da coluna `date_time_aware` é informado apenas `-0300`;
+* Os dados persistidos nos campos *time zone* ingênuos não apresentaram qualquer alteraçao.
 
 | id | date_time_tz_aware | iso_format_tz_aware | date_time_naive | isofomat_naive |
 |---|---|---|---|---|
@@ -73,23 +73,27 @@ Reparem que, acessando os dados pelo SQLAlchemy, temos:
 * Os dados das colunas `iso_format`, `date_time_naive` e `isoformat_naive` apresentam os dados assim como estão no banco de dados.
 
 Comportamentos estanhos a serem resolvidos:
-* O *time zone* deveria ser de -0300 hora. de onde veio os seis munitos a mais?;
-* Afinal, o dado é persistido no banco de dados em UTC ou no *time zone* persistido?
+* O *time zone* deveria ser de -0300 hora. **De onde veio os seis munitos a mais?**
+* Afinal, o dado é persistido no banco de dados em UTC ou no *time zone* informado no objeto *datetime*?
 
 ### Resolvendo problema de definição de *time zone* I
 
-Ao conversar com um colega, me foi informado que a forma como eu estava definido o *time zone* esatava equivocado. A única direção dada, por ele foi [essa pergunta no SOF](https://stackoverflow.com/questions/1379740/pytz-localize-vs-datetime-replace).
-Os detalhes são um pouco confusos, mas um comentário me chamou a atençao:
+Ao conversar com um colega, me foi informado que a forma como eu estava definido o *time zone* esatava equivocado. A única direção dada por ele foi [essa pergunta no SOF](https://stackoverflow.com/questions/1379740/pytz-localize-vs-datetime-replace).
+
+Um comentário me chamou a atenção:
 
 > @MichaelWaterfall: pytz.*time zone*() may correspond to several tzinfo objects (same place, different UTC offsets, *time zone* abbreviations). tz.localize(d) tries to find the correct tzinfo for the given d local time (some local time is ambiguous or doesn't exist). replace() just sets whatever (random) info pytz *time zone* provides by default without regard for the given date (LMT in recent versions). tz.normalize() may adjust the time if d is a non-existent local time e.g., the time during DST transition in Spring (northern hemisphere) otherwise it does nothing in this case.
 
-Em trdução livre:
-> pytz.*time zone*() pode corresponder a objetos com diferentes tzinfo (mesmo local, diferentes *offset* em relaçõ ao UTC). tz.localize(d) tenta encontrar o tzinfo correto para um dada hora local (algumas horas locais são ambiguas ou inexistentes). replace() apenas define qualquer informação de *time zone* por padrão sem se preocupar com a data. tz.normalize() deve ajustar a informação de tempo se o objeto  d não possuir informação de hora local.
+Em tradução livre:
 
-Então, como estou usando o `pytz` para definir um objeto de *time zone*, o `replace` não seria a forma correta, mas sim, o método `localize` do pórprio *time zone*. Reparem a diferença que isso fez no parametro `tzinfo` da instância:
+> pytz.*time zone*() pode corresponder a objetos com diferentes tzinfo (mesmo local, diferentes *offset* em relaçõ ao UTC). tz.localize(d) tenta encontrar o tzinfo correto para um dada hora local (algumas horas locais são ambiguas ou inexistentes). replace() apenas define qualquer informação de *time zone* por padrão sem se preocupar com a data. tz.normalize() deve ajustar a informação de tempo se o objeto d não possuir informação de hora local.
 
-```
-BR_TIME_ZONE = pytz.*time zone*("America/Sao_Paulo")
+Então, como estou usando o `pytz` para definir um objeto de *time zone*, o `replace` não seria a forma correta, mas sim, o método `localize` do pórprio *time zone*. 
+
+Vamos testar, então:
+
+```python
+BR_TIME_ZONE = pytz.timezone("America/Sao_Paulo")
 naive = datetime(2022, 5, 27, 12, 30, 0, 0)
 naive.replace(tzinfo=BR_TIME_ZONE)
 # datetime.datetime(2022, 5, 27, 12, 30, tzinfo=<DstTzInfo 'America/Sao_Paulo' LMT-1 day, 20:54:00 STD>)
@@ -97,7 +101,7 @@ BR_TIME_ZONE.localize(naive)
 # datetime.datetime(2022, 5, 27, 12, 30, tzinfo=<DstTzInfo 'America/Sao_Paulo' -03-1 day, 21:00:00 STD>)
 ```
 
-Reparem que há uma diferença de seis minutos entre os objetos resultantes.
+Reparem a diferença que isso fez no parametro `tzinfo` da instância: há uma diferença de seis minutos entre os objetos resultantes.
 
 Fiz mais um teste para entender se o problema é o método `replace` ou a forma como o `pytz` define o *time zone*:
 
@@ -114,7 +118,7 @@ Ao salvar no banco de dados o objeto `aware` criado usando o `localize`, os dado
 |---|---|---|---|---|
 | 2022-05-27 12:30:00.000 -0300 | 2022-05-27T12:30:00-03:00 | 2022-05-27 12:30:00.000 | 2022-05-27T12:30:00 | 2022-05-27T12:30:00 |
 
-OK, um problema resolvido. Mas ainda fica o misterio das conversões entre o dado acessado pelo DBeaver daquele acessado pelo SQLAlchemy.
+:heavy_check_mark: OK, um problema resolvido. Mas ainda fica o mistério das conversões entre o dado acessado pelo DBeaver daquele acessado pelo SQLAlchemy.
 
 ### Resolvendo problema de definição de *time zone* II
 
@@ -123,13 +127,18 @@ Uma semana depois de solucionado esse primeiro problema na definição do *time 
 Vamos testar, então: 
 
 ```python
-from datetime import *time zone*, timedelta
+from datetime import timezone, timedelta
 
-# BR_TIME_ZONE = pytz.*time zone*("America/Sao_Paulo")
-BR_TIME_ZONE = *time zone*(timedelta(hours=-3))
+# BR_TIME_ZONE = pytz.timezone("America/Sao_Paulo")
+BR_TIME_ZONE = timezone(timedelta(hours=-3))
+datetime(2022, 5, 27, 12, 30, 0, 0, tzinfo=BR_TIME_ZONE)
+# datetime.datetime(2022, 5, 27, 12, 30, tzinfo=datetime.timezone(datetime.timedelta(days=-1, seconds=75600)))
+datetime(2022, 5, 27, 12, 30, 0, 0).replace(tzinfo=BR_TIME_ZONE)
+# datetime.datetime(2022, 5, 27, 12, 30, tzinfo=datetime.timezone(datetime.timedelta(days=-1, seconds=75600)))
+
 ```
 
-O processo de definição do *time zone*, seguiu o mesmo, usando o [`localize`]().
+Reparem que agora não estamos mais usando uma instância [`TimeZone`]() do `pytz`. Logo, não poderemos usar o método `replace()`. Contudo, o processo de definição do *time zone* produz os resultados esperados tanto informando o `tzinfo` na criação da intância `datetime`, como ao usar o método `replace`.
 
 | id | date_time_tz_aware | iso_format_tz_aware | date_time_naive | isofomat_naive |
 |---|---|---|---|---|
@@ -137,9 +146,9 @@ O processo de definição do *time zone*, seguiu o mesmo, usando o [`localize`](
 
 Bom, parece que essa forma também persiste os dados de forma correta e, ainda nos poupa de usar um módulo (o `pytz`). Gracias, [@dunossauro](https://twitter.com/dunossauro)!
 
-## Reproduzindo comportament0 estranho II
+## Reproduzindo comportamento estranho II
 
-Ainda que me tenha tomado um tempo considerável, a solução anterior não chegou a esgotar a minha paciência. Por isso, ao invés de ser objetivo com o pblema que ainda tenha que resolver, fiz mais alguns testes, para tentar entender, de vez, a diferneça entre uma coluna com *time zone* consciente e nao consciente no PostgreSQLQL.
+Ainda que me tenha tomado um tempo considerável, a solução anterior não chegou a esgotar a minha paciência. Por isso, ao invés de ser objetivo com o pblema que ainda tinha a resolver, fiz mais alguns testes, para tentar entender, de vez, a diferneça entre uma coluna com *time zone* consciente e nao consciente no PostgreSQL.
 
 #### Primeiro teste:
 
