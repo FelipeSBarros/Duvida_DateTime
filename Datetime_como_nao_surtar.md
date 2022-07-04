@@ -16,7 +16,7 @@ Um detalhe não menos importante é o fato de eu estar usando o módulo [`pytz`]
 
 O [SQLAlchemy][] estava sendo usado para fazer a conexão com o banco de dados, commit e etc. E, pensando em facilitar a minha vida estive usando o [DBeaver][], uma interface gráfica para gestão de banco de dados. Ou seja, usava o DBeaver para conectar ao banco de dados e observar o que estava sendo persistido sem precisar fazê-lo pelo [`psql`]().
 
-## Reproduzindo comportament estranho I
+## Reproduzindo comportament0 estranho I
 
 Basicamente criei uma instância `datetime` ingenua (*naive*) em relação ao `timezone` e outra com `timezone` declarado (*aware*). Criei uma instância da tabela persistindo esses dados, mantendo o objeto com `timezone` consciente, na coluna consciente e o ingenuo na coluna ingenua. O mesmo para os campos `isofromat`.
 
@@ -137,7 +137,7 @@ O processo de definição do `timezone`, seguiu o mesmo, usando o [`localize`]()
 
 Bom, parece que essa forma também persiste os dados de forma correta e, ainda nos poupa de usar um módulo (o `pytz`). Gracias, [@dunossauro](https://twitter.com/dunossauro)!
 
-### Resolvendo comportamento estranho II
+## Reproduzindo comportament0 estranho II
 
 Ainda que me tenha tomado um tempo considerável, a solução anterior não chegou a esgotar a minha paciência. Por isso, ao invés de ser objetivo com o pblema que ainda tenha que resolver, fiz mais alguns testes, para tentar entender, de vez, a diferneça entre uma coluna com `TimeZone` consciente e nao consciente no PostGreSQL.
 
@@ -215,20 +215,21 @@ Com esses testes fiquei ainda mais perdido: eu só queria entender a diferença 
 
 **Ficaram duas perguntas norteadoras:**
 
-* O Postgresql, em um campo `TimeZpne` aware, armazena a informação como persistida (ou seja, cada registro com um `TimeZone` diferente) ou ele converte, homogeneizando todos os dados para um determinado `TimeZone`?
-* Vi que o SQLAlchemy por padrão retorna os dados em UTC, mesmo. A pergunta que me fiz foi: Por que?
+* O Postgresql, em um campo `TimeZone` aware, armazena a informação como persistida (ou seja, cada registro com um `TimeZone` diferente) ou ele converte, homogeneizando todos os dados para um determinado `TimeZone`?
+* Vi que o SQLAlchemy por padrão retorna os dados em UTC, mesmo. A pergunta que me fiz foi: Por que? Ou melhor:
 * É o SQLAlchemy que converte os dados para UTC?
 
-Segui "encucado" com o fato de ter informações diferentes sobre os registros persistidos no banco de dados de acoro com a ferramenta usada (nos casos anteriores, DBeaver e SQLAlchemy).
 
-Decidi acessar o banco e fazer as consultas apresentadas anteriormente pelo [psql](https://www.postgresql.org/docs/current/app-psql.html) e confirmar o timezone.
+### Resolvendo dúvida sobre dados persistidos
 
-```python
-psql -h localhost -U postgres -p 5432 postgres
-select * from datetime
-```
+Segui "encucado" com o fato de ter informações diferentes sobre os registros persistidos no banco de dados de acoro com a ferramenta usada (nos casos anteriores, DBeaver - apresentando os dados em +0300 - e SQLAlchemy - apresentadno os dados em +0000).
 
-Eis, então, que fica sacramentado: todos os registro são salvos em UTC, no banco de dados! 
+Decidi acessar o banco e fazer as consultas apresentadas anteriormente pelo [psql](https://www.postgresql.org/docs/current/app-psql.html) e confirmar o `TimeZone`, assim como já o tinha feito na [Preparação do ambiente de desenvolvimento](#Preparando-ambiente-de-desenvolvimento). A diferença foi que fiz o mesmo no DBeaver também.
+
+![](img/show_timezone_psql.png)
+![](img/show_timezone_dbeaver.png)
+
+Eis, então, que fica evidente: o mesmo banco de dados apresentando `TimeZones` diferentes de acordo com a ferramenta usada. Entendo que o DBeaver, por se tratar de uma interface gráfica desenhada para facilitar a vida dos usuário e gestores de banco de dados, identifica o `TimeZone` da máquina onde o mesmo está instalada e define o `TimeZone` de acordo com isso para que os dados sejam retornados conforme dito `TimeZone`.
 
 Isso me fez lembrar da documentação do postgres que já havia lido, mas não tinha dado muita atenção:
 
@@ -238,13 +239,10 @@ Isso me fez lembrar da documentação do postgres que já havia lido, mas não t
 Em traduçao livre:
 > Para dados com informaçao de time zone, o valor armazenado estara sempre em UTC (Universal Coordinated Time, traditionally known as Greenwich Mean Time, GMT). Um valor de entrada que nao tenha time zone declarado explicitamente sera convertido a UTC usando o time zone indicado pelo sistema.
 
-Constatação 1: DBeaver, por ser uma interface grafica, identificou o `TimeZone` da minha máquina e apresentava todos os dados com tal info. O SQLAlchemy
-
-Os dados que possuem a informação de `TimeZone`, são convertidos a UTC. Os dado naive enviado é entendido como já estando em UTC, logo não é convertido.
-
-
-
-Não é o SQLAlchemy, mas o postgres que funciona assim. Como já dito antes, o postgres sempre mantén os dados com time zone UTC. E ele o converte automaticamente de acordo com o timezone da cessão de acesso ao banco de dados. Vejam:
+A partir disso, várias constatações:
+* Os dados que possuem a informação de `TimeZone`, são convertidos a UTC. Os dado naive enviado é entendido como já estando em UTC, logo não é convertido.
+* O DBeaver identificou o `TimeZone` da minha máquina e apresentava todos os dados considerando tal informação.
+* Não é o SQLAlchemy que define como os dados serão resgatados, mas o postgres. Na verdade, essa definição é feita pela sessão de conexão com o banco de dados. Vejam:
 
 ```python
 psql -h localhost -U postgres -p 5432 postgres
@@ -260,10 +258,9 @@ select * from datetime;
 Com uma session recém iniciada, o `timezone` é configurado para UTC.
 Ao fazer um select, a coluna com `timezone` consciente (`date_time_tz_aware`), apresenta os dados como são salvos no banco, em UTC.
 
-Se, na mesma conexão, eu configuro o `timezone` para `AmericaSao_Paulo`, e faço executa a mesma query, os dados na coluna com `timezone` consciente serão apresentados convertidos ao `timezone` definido na conexão.
+Se, na mesma conexão, eu configuro o `timezone` para `America/Sao_Paulo`, e eecuto a mesma query, os dados na coluna com `timezone` consciente serão apresentados convertidos ao `timezone` definido na conexão.
 
 ```python
-
 postgres=# set timezone = 'America/Sao_Paulo';
 #SET
 postgres=# show timezone;
@@ -276,11 +273,12 @@ postgres=# show timezone;
 select * from datetime;
 ```
 
-Tudo parece bem obvio, não? Mas uma ciosa que foi fundamental para a minha confusão mental sobre esse comportamente estranho é que eu estive usando o DBeaver como interface gráfica para ver como os dados estavam armazenados no banco de dados. E o DBeaver em algum momento, identifica o `timezone` do sistema que o está executando e o usa na configuração da sessão. Então, eu acessava os dados pelo SQLAlchemy, que usa uma sessão padrão, sem configuração de timezone, logo `timezone` UTC, e recebia os dados como tal. Mas ao olhar os mesmos dados pelo DBeaver, os via convertidos para a timezone do meu sistema, `America/Sao_Paulo`, e os via convertido, com outros valores na coluna com `timezone` consciente;
-
-E com isso, eu desenvolvi um sistem, entendendo que os dados já estariam em -3, pois foram manipulados e salvos no banco de dados assim, e assim os via pelo DBeaver, mas ao consultar o banco de dados pelo SQLAlchemy os mesmos vinham em UTC. Logo, eu tinha problemas no desencadeamento do sistema pois a data e hora retorndos da consulta eram usados para filtrar outros dados que tinham a data e hora (`timezone` -3) armazenados em um campo de texto (logo esses não passavam por qualquer processo de conversão).  
+Tudo parece bem obvio, não? Mas uma ciosa que foi fundamental para a minha confusão mental sobre esse comportamente estranho é que eu estive usando o DBeaver como interface gráfica para ver como os dados estavam armazenados no banco de dados. E o DBeaver em algum momento, identifica o `timezone` do sistema que o está executando e o usa na configuração da sessão. Então, eu acessava os dados pelo SQLAlchemy, que usa uma sessão padrão, sem configuração de timezone, logo `timezone` UTC, e recebia os dados como tal. Mas ao olhar os mesmos dados pelo DBeaver, os via convertidos para a timezone do meu sistema, `America/Sao_Paulo`, e os via convertido, com outros valores na coluna com `timezone` consciente; Com isso, eu desenvolvi um sistema, entendendo que os dados estariam em -3, pois foram manipulados e salvos no banco de dados assim, e assim os via pelo DBeaver, mas ao consultar o banco de dados pelo SQLAlchemy os mesmos vinham em UTC. Logo, eu tinha problemas no desencadeamento do sistema pois a data e hora retorndos da consulta eram usados para filtrar outros dados que tinham a data e hora (`timezone` -3) armazenados em um campo de texto (logo esses não passavam por qualquer processo de conversão).  
 
 Enfim, vivendo e aprendendo.
+
+E como fariamos para definir o `timezone` de uma session usando o SQLAlchemy?
+`engine = create_engine(..., connect_args={"options": "-c timezone=utc"})`
 
 ## Preparando ambiente de desenvolvimento
 
