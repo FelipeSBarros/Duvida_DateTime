@@ -18,7 +18,7 @@ O [SQLAlchemy](https://www.sqlalchemy.org/) estava sendo usado para fazer a cone
 
 ## Reproduzindo comportamento estranho I
 
-Basicamente criei uma instância `datetime` ingenua (*naive*) em relação ao *time zone* e outra com *time zone* declarado (*aware*). Criei uma instância da tabela persistindo esses dados, mantendo o objeto com *time zone* consciente, na coluna consciente e o ingenuo na coluna ingenua. O mesmo para os campos `isofromat`.
+Basicamente criei uma instância `datetime` ingenua (*naive*) em relação ao *time zone* e outra com *time zone* declarado ( consciente, *aware*). Criei uma instância da tabela persistindo esses dados, mantendo o objeto com *time zone* consciente, na coluna consciente e o ingenuo na coluna ingenua. O mesmo para os campos `isofromat`.
 
 ```python
 import pytz
@@ -51,7 +51,7 @@ session.close()
 
 Ao fazer o commit e consultar a base de dados, começa o terror e pânico:
 
-Ao usar o [DBeaver][] para acessar o registro criado (seja pela interface grafica como pela query), observei que:
+Ao usar o DBeaver para acessar o registro criado (seja pela interface gráfica como pela query da GUI), observei que:
 
 * O dado persistido na coluna consciente, o valor foi alterado em seis minutos (acrescidos). **Deveria ser 12:30 e passou a ser 12:36**, ao passo que a informação de *time zone* e apresentada de forma correta: -0300;  
 * O dado da coluna `iso_format_tz_aware` possui a informaçao sem qualquer alteraçao. Ao passo que a *time zone* informada não é a esperada (-3 horas). É -03 horas e 06 minutos. Lembrem-se que o *time zone* da coluna `date_time_aware` é informado apenas `-0300`;
