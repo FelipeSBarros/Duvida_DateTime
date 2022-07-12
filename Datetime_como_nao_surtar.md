@@ -4,6 +4,16 @@ Há algum tempo comecei a perceber um "comportamento estranho" relacionado aos d
 
 Ainda que agora, tendo resolvido e entendido as causas e origens desse comportamento, tudo parece óbvio, decidi compartilhar um pouco deste processo, pois nessa busca por soluções não encontrei nada que me ajudasse de forma objetiva.
 
+Indice:  
+1. [Contextualizando o sistema](#Contextualizando-o-sistema)
+2. [Reproduzindo comportamentos estranhos](#Reproduzindo-comportamentos-estranhos)
+   1. [Resolvendo problema de definição de *time zone*](#Resolvendo-problema-de-definição-de-time-zone)
+   1. [Resolvendo problema de definição de *time zone* com `timedelta`](#Resolvendo-problema-de-definição-de-time-zone-com-timedelta)
+   1. [O mistério das consultas sendo retornadas em UTC e `-0300`](#O-mistério-das-consultas-sendo-retornadas-em-UTC-e--0300)
+   1. [coluna naive e aware](#coluna-naive-e-aware)
+3. [Preparando ambiente de desenvolvimento](#Preparando-ambiente-de-desenvolvimento)
+3. [TL/DR](#tldr)
+
 Criei um ambiente para reproduzir esses "comportamentos estranhos" ([há uma sessão sobre como preparar um ambiente para poder reproduzir esses códigos](#Preparando-ambiente-de-desenvolvimento)) e deixarei os trechos de códigos usados, para vocês poderem reproduzir os passos dados. Irei trabalhar em todos os exemplos com um mesmo objeto de data e hora (instância `DateTime`) mudando apenas o uso de *time zone*, para torná-los conscientes (*aware*) ou não (*naive*) (leia um pouco sobre isso [aqui](https://docs.python.org/3/library/datetime.html#aware-and-naive-objects)).
 
 ## Contextualizando o sistema
@@ -374,7 +384,7 @@ create_table(engine)
 
 ```
 
-## Identificando *time zone* das instâncias de trabalho
+### Identificando *time zone* das instâncias de trabalho
 
 Para confirmar que estamos reproduzindo as mesmas situações, vamos confirmar o *time zone* da base de dados.
 
