@@ -230,40 +230,42 @@ Eis que todos os dados são retornados em `-0300`:
 
 Tudo parece bem obvio, não? Mas uma coisa que foi fundamental para a minha confusão mental sobre esse comportamento: o fato de estar usando o DBeaver como interface gráfica para ver como os dados estavam armazenados no banco de dados. O DBeaver, em algum momento, identifica o *time zone* do sistema que o está executando e o usa na configuração da sessão. Com isso, ao olhar os mesmos dados pelo DBeaver, os via convertidos para a *time zone* do meu sistema e acreditava que os mesmos estavam sendo persistidos como tal no banco de dados. Ao acessar os dados pelo SQLAlchemy (que usa uma sessão padrão, sem configuração de *time zone*, logo em UTC) recebia os dados em UTC. Ficando sem entender o que nem como estava sendo persistido. 
 
-:heacy_checkmark: Fica o aprendizado: O PostgreSQL irá retornar os dados de data e hora no *time zone* da sessão de conexão, que por padrão é UTC. Caso vc queira receber-los em outro *time zone*, basta definir usando o [`SET timezone`](https://www.postgresql.org/docs/current/sql-set.html), ou, se for usando o SQLAlchemy, você poderá fazê-lo usando o parâmetro [connect_args](https://docs.sqlalchemy.org/en/14/core/engines.html#sqlalchemy.create_engine.params.connect_args)
-`engine = create_engine(..., connect_args={"options": "-c timezone=utc"})`
+:heacy_checkmark: Fica o aprendizado: O PostgreSQL irá retornar os dados de data e hora no *time zone* da sessão de conexão, que por padrão é UTC. Caso vc queira receber-los em outro *time zone*, basta definir usando o [`SET timezone`](https://www.postgresql.org/docs/current/sql-set.html), ou, se for usando o SQLAlchemy, você poderá fazê-lo usando o parâmetro [connect_args](https://docs.sqlalchemy.org/en/14/core/engines.html#sqlalchemy.create_engine.params.connect_args):  
+
+```
+engine = create_engine(..., connect_args={"options": "-c timezone=-3"})`
+```
 
 ### coluna naive e aware
 
-Ainda que me tenha tomado um tempo considerável, a solução anterior não chegou a esgotar a minha paciência. Por isso, ao invés de ser objetivo com o problema que ainda tinha a resolver, fiz mais alguns testes, para tentar entender, de vez, a diferneça entre uma coluna com *time zone* consciente e nao consciente no PostgreSQL.
+Ainda que me tenha tomado um tempo considerável resolução de todas essas dúvidas, não chegou a esgotar a minha paciência. Por isso, fiz mais alguns testes, para tentar entender, de vez, a diferneça entre usar ou não coluna com *time zone* consciente e ingênua no PostgreSQL.
+
+Ainda que já esteja superada a dúvida sobre as diferenças entre DBeaver e SQLAlchemy, seguirei aresentando as consultas usando ambas ferramentas, pois isso nos ajudará a entender as consequências ao usar campo consciente ou ingênuo.  
 
 #### Primeiro teste:
 
 Inseri em ambos campos de `DateTime` (consciente e ingênuo), um objeto com *time zone* consciente:
 
 ```python
-record2 = DateTimeTable(
+record = DateTimeTable(
     date_time_tz_aware=aware,
     isoformat_tz_aware=f"{aware.isoformat()}",
     date_time_naive=aware,
     isoformat_naive=f"{aware.isoformat()}"
 )
-session.add(record2)
+session.add(record)
 session.commit()
 ```
 
-Acessando esse dado pelo DBeaver, tenho:
+Ao fazê-lo, o PosgreSQL entenderá o *time zone* do dado e, como dito anterioemente, os perssitirá em UTC (logo, acrescentando tres horas). **Isso tanto para o campo consciente como para o campo ingênuo**. A diferença, contudo estará no resgate da informaçao por uma sessão em UTC ou em outro *time zone*:
+
+Acessando esse dado pelo DBeaver (sessão com *time zone* configurado em -0300), tenho o valor do campo `aware` convertido ao *time zone* da sessão (-0300) e indicando o mesmo, ao passo que o valor persistido no campo `naive` se mantêm em formato UTC **e sem a indicaçao do *time zone* :**
 
 | id | date_time_tz_aware | iso_format_tz_aware | date_time_naive | isofomat_naive |
 |---|---|---|---|---|
 | 2 | 2022-05-27 12:30:00.000 -0300 | 2022-05-27T12:30:00-03:00 | 2022-05-27 15:30:00.000 | 2022-05-27T12:30:00-03:00 |
 
-Reparem que:
-
-* Nas colunas `tz_aware` nada mudou do exemplo anterior, exceto pelo fato de eu ja ter corrigido aquela diferença de seis minutos que tinhamos antes.
-* Na coluna `naive`, passo a ter o objeto alterado, sendo acrescido 3 horas;
-
-Ao acessar tais dados pelo SQLAlchemy, a informação persistida no campo *time zone* consciente é retornada acrescida de trẽs horas e no campo ingenuo, não há alteração.
+Já pelo SQLAlchemy a informação persistida no campo *time zone* consciente é retornada respeitando o *time zone* da sessão (logo, *time zone* UTC) e no campo ingênuo, não há alteração.
 
 | id | date_time_tz_aware | iso_format_tz_aware | date_time_naive | isofomat_naive |
 |---|---|---|---|---|
@@ -271,49 +273,31 @@ Ao acessar tais dados pelo SQLAlchemy, a informação persistida no campo *time 
 
 #### Segundo teste:
 
-Inseri em ambos campos de `DateTime`, o objeto com *time zone* ingênuo, sem info de *time zone*.
+Ao inserir em ambos campos, um objeto ingênuo, em relaçao ao *time zone*, o PostgreSQL entende que os mesmos já estão em UTC. Logo, ao acessá-los pelo DBeaver (sessao com *time zone* -0300), o valor no campo consciente apresenta o desconto de três horas com a informação de *time zone* -0300, e na coluna `naive`, os valores não são alterados.
 
 ```python
 # terceiro registro inserindo datetime naive sempre
-record3 = DateTimeTable(
+record = DateTimeTable(
     date_time_tz_aware=naive,
     isoformat_tz_aware=f"{naive.isoformat()}",
     date_time_naive=naive,
     isoformat_naive=f"{naive.isoformat()}"
 )
-session.add(record3)
+session.add(record)
 session.commit()
 
 session.close()
 ```
 
-Acessando esse registro pelo DBeaver, tenho:
-
 | id | date_time_tz_aware | iso_format_tz_aware | date_time_naive | isofomat_naive |
 |---|---|---|---|---|
 | 2 | 2022-05-27 09:30:00.000 -0300 | 2022-05-27T12:30:00 | 2022-05-27 12:30:00.000 | 2022-05-27T12:30:00 |
 
-Percebam que:
-
-- Na coluna `tz_aware` o campo de hora possui tres horas descontada, e a info de *time zone* é de -0300.
-- Na coluna `naive`, os objetos possuem os valores respeitados;
-
-Acessando so dados pelo SQLAlchemy, passo a ter:
+Acessando so dados pelo SQLAlchemy, tanto a couna consciente como a ingênua apresentam o mesmo valor. Contudo, no campo cosnceitne, a informação do *time zone* é persistido (+00:00:00).
 
 | id | date_time_tz_aware | iso_format_tz_aware | date_time_naive | isofomat_naive |
 |---|---|---|---|---|
 | 2 | 2022-05-27 12:30:00+00:00 | 2022-05-27T12:30:00 | 2022-05-27 12:30:00 | 2022-05-27T12:30:00 |
-
-- Na coluna `tz_aware`, a hora conforme salvo no banco, mas com info de *time zone* para utc (+00:00:00)
-- Na coluna `naive` também, mas, como esperado sem a info de *time zone*;
-
-Com esses testes fiquei ainda mais perdido: eu só queria entender a diferença no comportamento dos campo do PostgreSQLQL com *time zone* consciente ingênuo, mas acabei mais confuso ainda, pela diferença entre o resgatado pelo banco com DBeaver e SQLAlchemy.
-
-**Ficaram duas perguntas norteadoras:**
-
-* O PostgreSQLql, em um campo *time zone* aware, armazena a informação como persistida (ou seja, cada registro com um *time zone* diferente) ou ele converte, homogeneizando todos os dados para um determinado *time zone*?
-* Vi que o SQLAlchemy por padrão retorna os dados em UTC, mesmo. A pergunta que me fiz foi: Por que? Ou melhor:
-* É o SQLAlchemy que converte os dados para UTC?
 
 ## Preparando ambiente de desenvolvimento
 
@@ -434,6 +418,35 @@ Ou seja, o sistema no qual está rodando o python, está com o *time zone* -03 e
 
 ## TL/DR  
 
-Ao trabalhar com objetos datetime, salva-los num banco de dados PostgreSQL, em campo DateTime, e resgata-los com SQLAlchemy, pude perceber que algumas conversoes estavam sendo feitas. Fiquei perdido sem entender em que momento essas conversões acontecem nem como controla-las. ~~Afinal, a pergunta e:~~  
+* É possível usar tanto o `timedelta` como `TimeZone`, do `pytz` para definir o `tzinfo` de uma instância `datetime`. Contudo, **é preciso cuidado com relação ao método usado na atribuição do `tzinfo`:**
+  * Caso se esteja usando uma instância `TimeZone` do `pytz`, é indicado usar o método `localize`;
+  
+  ```python
+  BR_TIME_ZONE = pytz.timezone("America/Sao_Paulo")
+  date_time_ibject = datetime(2022, 5, 27, 12, 30, 0, 0)
+  BR_TIME_ZONE.localize(date_time_ibject)
+  ```
 
-Como evitar ao máximo as conversões entre o objeto `datetime`, o que está salvo no banco de dados e o que é resgatado pelo SQLAlchemy?
+  * Já usando o `timedelta`, pode-se fazê-lo tanto na criação da instância `datetime`, quanto usando o método `replace` do objeto `datetime` já instanciado;
+  
+  ```python
+  BR_TIME_ZONE = timezone(timedelta(hours=-3))
+  date_time_object = datetime(2022, 5, 27, 12, 30, 0, 0, tzinfo=BR_TIME_ZONE)
+  # OU
+  date_time_object = datetime(2022, 5, 27, 12, 30, 0, 0)
+  date_time_object.replace(tzinfo=BR_TIME_ZONE)
+  ``` 
+
+* Os dados de data e hora são sempre armazenados em UTC no PostgreSQL, independente de estarmos ou não usando campos com *time zone* conscientes. Logo, ao persistir um dado com informação de *time zone*, o mesmo será convertido e persisitido em UTC, mesmo em campos ingênuos. Objetos sem informação de *time zone*, serão persistido como tais por se entender já estarem em UTC. A diferênça em relação a esses tipos da cmpos se dá pelo fato do primeiro armazenar a informação do *time zone* e o último, não.
+* A diferença entre campo consciente e ingênuo se dá nas consultas: Os campos consceintes, ao serem cosnutados por uma sessão com determinado *time zone* diferente do padrão (UTC), retornará os dados convertidos ao *time zone* da sessão;
+  * Para definir o *time zone* de uma sessão, pode-se usar: 
+  ```
+  # psql
+  set timezone = 'America/Sao_Paulo';
+  ```
+  ou 
+  ```python
+  # SQLAlchemy
+  engine = create_engine(..., connect_args={"options": "-c timezone=-3"})
+  ```
+  

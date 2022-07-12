@@ -25,6 +25,7 @@ def db_connect():
     return create_engine(
         f"postgresql+psycopg2://{BD_USERNAME}:{BD_PASSWORD}@{BD_HOST}:{BD_PORT}/{BD_NAME}",
         json_serializer=lambda obj: json.dumps(obj, ensure_ascii=False, default=str),
+        connect_args={"options": "-c timezone=-3"}
     )
 
 
