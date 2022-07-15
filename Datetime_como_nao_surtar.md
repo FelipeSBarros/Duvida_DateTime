@@ -1,10 +1,10 @@
-# Entendendo a fundo a relação datetime com e sem *time zone* entre SQLAlchemy e PostgreSQL
+# Aprendendo sobre `datetime`, SQLAlchemy e PostgreSQL a partir de bugs
 
-Há algum tempo comecei a perceber um "comportamento estranho" relacionado aos dados de data e hora num sistema que estava desenvolvendo. Minha reação inicial, praticamente um instinto de sobrevivência, foi simplesmente resolver a situação contornando o problema. Mas chegou um momento que precisei entender a origem do mesmo. Mais uma vez tive que fazer um exercício de seguir/isolar o problema que me assombrava ([veja outros artigos que produzi sobre bugs/comportamentos estranhos que observo](felipesbarros.github.io)) para tentar compreender o motivo da sua existência. Esse processo tomou-me alguns dias e, claro, proporcionou alguns aprendizados.
+Há algum tempo comecei a perceber um "comportamento estranho" (ainda que tenha colocado o termo bug no título, acho que não é o caso. Foi para atrir mais atenção, mesmo:) relacionado aos dados de data e hora num sistema que estava desenvolvendo. Minha reação inicial, praticamente um instinto de sobrevivência, foi simplesmente resolver a situação contornando o problema. Mas chegou um momento que precisei entender a origem do mesmo. Mais uma vez tive que fazer um exercício de seguir/isolar o problema que me assombrava ([veja outros artigos que produzi sobre bugs/comportamentos estranhos](felipesbarros.github.io)) para tentar compreender o motivo da sua existência. Esse processo tomou-me alguns dias e, claro, proporcionou alguns aprendizados.
 
 Ainda que agora, tendo resolvido e entendido as causas e origens desse comportamento, tudo parece óbvio, decidi compartilhar um pouco deste processo, pois nessa busca por soluções não encontrei nada que me ajudasse de forma objetiva.
 
-Criei um ambiente para reproduzir esses "comportamentos estranhos" ([há uma seção sobre como preparar um ambiente para poder reproduzir esses códigos](#Preparando-ambiente-de-desenvolvimento)) e deixarei os trechos de códigos usados para vocês poderem reproduzir os passos dados. Irei trabalhar em todos os exemplos com um mesmo objeto de data e hora (instância `datetime`) mudando apenas o uso de fuso horário, para torná-los conscientes (*aware*) ou não (*naive*, ingênuo) (leia um pouco sobre isso [aqui](https://docs.python.org/3/library/datetime.html#aware-and-naive-objects)).
+Criei um ambiente para reproduzir esses "comportamentos estranhos" ([há uma seção sobre como preparar um ambiente para poder reproduzir esses códigos](#Preparando-ambiente-de-desenvolvimento)) e deixarei os trechos de códigos usados para vocês poderem reproduzir os passos dados. Irei trabalhar em todos os exemplos com um mesmo objeto de data e hora (instância `datetime`) mudando apenas o uso de fuso horário, para torná-los conscientes (*aware*) ou não (*naive*, ingênuo) (leia um pouco sobre isso [aqui](https://docs.python.org/3/library/datetime.html#aware-and-naive-objects)). Na seção final, "resumo", deixo os principais aprendizados deste processo.
 
 Índice:  
 1. [Contextualizando o sistema](#Contextualizando-o-sistema)
@@ -14,13 +14,13 @@ Criei um ambiente para reproduzir esses "comportamentos estranhos" ([há uma se�
    1. [O mistério das consultas sendo retornadas em UTC e `-0300`](#O-mistério-das-consultas-sendo-retornadas-em-UTC-e--0300)
    1. [coluna naive e aware](#coluna-naive-e-aware)
 3. [Preparando ambiente de desenvolvimento](#Preparando-ambiente-de-desenvolvimento)
-3. [TL/DR](#tldr)
+3. [Resumindo](#tldr)
 
 ## Contextualizando o sistema
 
 Antes de tudo, lhes resumo a parte que importa do sistema:  
 
-O mesmo estava em um servidor com fuso horário UTC, e nele eu manipulava um dado de data e hora, usando o módulo python [`datetime`](https://docs.python.org/3/library/datetime.html), com *time zone* consciente (`aware`), transformando-os ao *time zone* de Brasília (-0300). Esse dado era, então, persistido no banco de dados [PostgreSQL](https://www.postgresql.org/), que estava em outro servidor, também com fuso horário UTC. Os dados eram persistidos em duas colunas diferentes: uma coluna [DateTime com *time zone* consciente](https://www.PostgreSQLql.org/docs/current/datatype-datetime.html) e numa coluna de texto onde, além da data e hora em formato [iso](https://docs.python.org/3/library/datetime.html#datetime.date.isoformat), uma observação textual era adicionada (que não vem ao caso, agora). Mas é importante saber que tínhamos o mesmo dado de data e hora persistido como tal e como texto.  
+O mesmo estava em um servidor com fuso horário UTC, e nele eu manipulava um dado de data e hora, usando o módulo python [`datetime`](https://docs.python.org/3/library/datetime.html), com *time zone* consciente (`aware`), transformando-os ao *time zone* de Brasília (-0300). Esse dado era, então, persistido no banco de dados [PostgreSQL](https://www.postgresql.org/), que estava em outro servidor, também com fuso horário UTC. Os dados eram persistidos em duas colunas diferentes: uma coluna [DateTime com *time zone* consciente](https://www.PostgreSQL.org/docs/current/datatype-datetime.html) e numa coluna de texto onde, além da data e hora em formato [iso](https://docs.python.org/3/library/datetime.html#datetime.date.isoformat), uma observação textual era adicionada (que não vem ao caso, agora). Mas é importante saber que tínhamos o mesmo dado de data e hora persistido como tal e como texto.  
 
 Um detalhe não menos importante é o fato de eu estar usando o módulo [`pytz`](https://pythonhosted.org/pytz/) para definir o fuso `America/Sao_Paulo`, e o [SQLAlchemy](https://www.sqlalchemy.org/), para fazer a conexão com o banco de dados, commit e etc. Pensando em facilitar a minha vida, estive usando o [DBeaver](https://dbeaver.io/), uma interface gráfica para gestão de banco de dados. Ou seja, usava o DBeaver para conectar ao banco de dados e observar o que estava sendo persistido sem precisar fazê-lo pelo [`psql`](https://www.postgresql.org/docs/current/app-psql.html).
 
@@ -87,17 +87,17 @@ Comportamentos estranhos a serem resolvidos:
 
 ### Resolvendo problema de definição de *time zone*
 
-Ao apresentar ess problema a um amigo, ele me alertou que a forma como eu estava definido o *time zone* estava equivocado. A única direção dada por ele foi [essa pergunta no Stack Overflow](https://stackoverflow.com/questions/1379740/pytz-localize-vs-datetime-replace).
+Ao apresentar esses problemas aos amigos que tenho como referência na área, um deles, o [@georgersilva](https://twitter.com/georgersilva), me alertou que a forma como eu estava definido o *time zone* estava equivocado. A única direção dada por ele foi [essa pergunta no Stack Overflow](https://stackoverflow.com/questions/1379740/pytz-localize-vs-datetime-replace).
 
 Um comentário me chamou a atenção:
 
-> @MichaelWaterfall: pytz.*time zone*() may correspond to several tzinfo objects (same place, different UTC offsets, *time zone* abbreviations). tz.localize(d) tries to find the correct tzinfo for the given d local time (some local time is ambiguous or doesn't exist). replace() just sets whatever (random) info pytz *time zone* provides by default without regard for the given date (LMT in recent versions). tz.normalize() may adjust the time if d is a non-existent local time e.g., the time during DST transition in Spring (northern hemisphere) otherwise it does nothing in this case.
+> @MichaelWaterfall: pytz.timezone() may correspond to several tzinfo objects (same place, different UTC offsets, *time zone* abbreviations). tz.localize(d) tries to find the correct tzinfo for the given d local time (some local time is ambiguous or doesn't exist). replace() just sets whatever (random) info pytz *time zone* provides by default without regard for the given date (LMT in recent versions). tz.normalize() may adjust the time if d is a non-existent local time e.g., the time during DST transition in Spring (northern hemisphere) otherwise it does nothing in this case.
 
 Em tradução livre:
 
-> pytz.*time zone*() pode corresponder a objetos com diferentes tzinfo (mesmo local, diferentes *offset* em relação ao UTC). tz.localize(d) tenta encontrar o tzinfo correto para um dada hora local (algumas horas locais são ambíguas ou inexistentes). replace() apenas define qualquer informação de *time zone* por padrão sem se preocupar com a data. tz.normalize() deve ajustar a informação de tempo se o objeto d não possuir informação de hora local.
+> pytz.timezone() pode corresponder a objetos com diferentes tzinfo (mesmo local, diferentes *offset* em relação ao UTC). tz.localize(d) tenta encontrar o tzinfo correto para um dada hora local (algumas horas locais são ambíguas ou inexistentes). replace() apenas define qualquer informação de *time zone* por padrão sem se preocupar com a data. tz.normalize() deve ajustar a informação de tempo se o objeto d não possuir informação de hora local.
 
-Como estou usando o `pytz` para definir um objeto de *time zone*, o [`replace`](https://docs.python.org/3/library/datetime.html#datetime.datetime.replace) não seria a forma correta, mas sim, o método [`localize`](http://pytz.sourceforge.net/index.html?highlight=localize) da própria instância `pytz.timezone`.
+Como estou usando o `pytz` para definir um objeto de data com fuso horário, o [`replace`](https://docs.python.org/3/library/datetime.html#datetime.datetime.replace) não seria a forma correta, mas sim, o método [`localize`](http://pytz.sourceforge.net/index.html?highlight=localize) da própria instância `pytz.timezone`.
 
 Vamos testar, então:
 
@@ -110,7 +110,7 @@ BR_TIME_ZONE.localize(naive)
 # datetime.datetime(2022, 5, 27, 12, 30, tzinfo=<DstTzInfo 'America/Sao_Paulo' -03-1 day, 21:00:00 STD>)
 ```
 
-Reparem a diferença que isso fez no parâmetro `tzinfo` da instância: há uma diferença de seis minutos entre os objetos resultantes.
+Reparem a diferença que isso fez no parâmetro `tzinfo` da instância: há uma diferença de seis minutos no objeto ao qual usei o método `replace()`. Ao usar o `localize()`, a informação de fuso horário "-03" aparece.
 
 Fiz mais um teste para entender se o problema é o método `replace` ou a forma como o `pytz` define o *time zone*:
 
@@ -151,7 +151,7 @@ datetime(2022, 5, 27, 12, 30, 0, 0).replace(tzinfo=BR_TIME_ZONE)
 # datetime.datetime(2022, 5, 27, 12, 30, tzinfo=datetime.timezone(datetime.timedelta(days=-1, seconds=75600)))
 ```
 
-Reparem que agora não estamos mais usando uma instância [`TimeZone`](http://pytz.sourceforge.net/#tzinfo-api) do `pytz` e por isso não podemos usar o método `localize()`. Com o timedelta, obtivemos os resultados esperados tanto passando o objeto no parâmetro `tzinfo`, na criação da intância `datetime`, como ao usar o método `replace`.
+Reparem que agora não estamos mais usando uma instância [`timezone`](http://pytz.sourceforge.net/#tzinfo-api) do `pytz` e por isso não podemos usar o método `localize()`. Com o timedelta, obtivemos os resultados esperados tanto passando o objeto no parâmetro `tzinfo`, na criação da instância `datetime`, como ao usar o método `replace`.
 
 | id | date_time_tz_aware | iso_format_tz_aware | date_time_naive | isofomat_naive |
 |---|---|---|---|---|
@@ -164,10 +164,10 @@ Dessa forma também temos os dados persistidos corretamente e ainda nos poupa de
 Só para refrescar a memória: Ao acessar os dados persistidos no banco de dados usando o DBeaver, os recebia com o *time zone* -0300, enquanto ao acessar pelo SQLAlchemy, os mesmos dados eram retornados em UTC +00:00.
 
 Decidi acessar o banco e fazer as consultas apresentadas anteriormente pelo [psql](https://www.PostgreSQLql.org/docs/current/app-psql.html) e pelo DBeaver para confirmar:
-1. o *time zone* da instância do banco de dados, e;
-2. o *time zone* dos dados persistidos;
+1. o fuso horário da instância do banco de dados, e;
+2. o fuso horário dos dados persistidos;
 
-#### Confirmando o *time zone* da instância do banco de dados
+#### Confirmando o fuso horário da instância do banco de dados
 
 Executando o mesmo comando no `psql` e DBeaver para uma mesma instância de banco dados tive diferentes retornos:
 
@@ -181,7 +181,7 @@ show timezone;
 
 ![](img/show_timezone_dbeaver.png)
 
-Eis, então, que fica evidente: o mesmo banco de dados apresentando *time zone* diferentes de acordo com a ferramenta usada na conexao. 
+Eis, então, que fica evidente: A ferramenta usada para conexão e consulta ao banco de dados é que foram as responsáveis pelas diferenas observadas no *time zone*.
 
 Isso me fez lembrar da documentação do PostgreSQL que já havia lido, mas não tinha dado a devida atenção:
 
@@ -258,7 +258,7 @@ Ainda que já esteja superada a dúvida sobre as diferenças entre DBeaver e SQL
 
 #### Primeiro teste:
 
-Inseri em ambos campos de `DateTime` (consciente e ingênuo), um objeto com *time zone* consciente:
+Inseri em ambos campos de `datetime` (consciente e ingênuo), um objeto com *time zone* consciente:
 
 ```python
 record = DateTimeTable(
@@ -438,9 +438,9 @@ Ou seja, o sistema no qual está rodando o python, está com o *time zone* -03 e
 
 > :warning: Atenção, dependendo de como estiver configurado seu sistema, esse resultado poderá ser diferente do meu.
 
-## TL/DR  
+## Resumindo
 
-* É possível usar tanto o `timedelta` como `TimeZone`, do `pytz` para definir o `tzinfo` de uma instância `datetime`. Contudo, **é preciso cuidado com relação ao método usado na atribuição do `tzinfo`:**
+* É possível usar tanto o `timedelta` como `TimeZone`, do `pytz`, para definir o `tzinfo` de uma instância `datetime`. Contudo, **é preciso cuidado com relação ao método usado na atribuição do `tzinfo`:**
   * Caso se esteja usando uma instância `TimeZone` do `pytz`, é indicado usar o método `localize`;
   
   ```python
@@ -471,3 +471,5 @@ Ou seja, o sistema no qual está rodando o python, está com o *time zone* -03 e
   # SQLAlchemy
   engine = create_engine(..., connect_args={"options": "-c timezone=-3"})
   ```
+
+Não poderia deixar de agradecer ao [@cuducos]() pelo incentivo em resolver os problemas encontrados e ajuda na revisão do texto. Eu acabei encontrando essas soluções antes de ter tempo de seguir a sugestão dele: "tentar identificar o como o SQLAlchemy estava fazendo o `insert` dos dados e o resgate dos mesmos". Vejo que, de alguma forma, foi o direcionamento que acabei tomando para entender a diferença nos fuso horários retornados pelas consultas.
